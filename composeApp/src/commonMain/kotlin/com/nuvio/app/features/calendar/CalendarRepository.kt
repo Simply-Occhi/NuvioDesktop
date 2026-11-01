@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -52,6 +53,7 @@ object CalendarRepository {
         scope.launch {
             LibraryRepository.uiState
                 .map { it.items }
+                .filter { it.isNotEmpty() }
                 .distinctUntilChanged()
                 .collectLatest {
                     refresh()
@@ -103,40 +105,69 @@ object CalendarRepository {
             }
 
             try {
+                LibraryRepository.ensureLoaded()
                 val libraryItems = LibraryRepository.uiState.value.items
                 val series = libraryItems.filter { isSeries(it.type) }
-                // High concurrency for fast parallel fetches
+                if (series.isEmpty()) {
+                    _uiState.update { it.copy(isLoading = false, isRefreshing = false) }
+                    return@launch
+                }
+
                 val concurrencySemaphore = Semaphore(24)
 
                 val nowMs = EpisodeReleaseDatePlatform.nowEpochMs()
                 val todayIso = EpisodeReleaseDatePlatform.localIsoDateAtEpochMs(nowMs) ?: "2026-11-01"
 
-                val deferredEpisodes = series.map { show ->
-                    async {
-                        concurrencySemaphore.withPermit {
-                            fetchShowEpisodes(show, todayIso)
+                val allEpisodesMap = cachedEpisodes
+                    .associateBy { "${it.showId}_${it.episodeId}_${it.releaseDateIso}" }
+                    .toMutableMap()
+
+                // Process in chunks to stream progressive updates to UI
+                val chunks = series.chunked(8)
+                for (chunk in chunks) {
+                    val chunkResults = chunk.map { show ->
+                        async {
+                            concurrencySemaphore.withPermit {
+                                fetchShowEpisodes(show, todayIso)
+                            }
                         }
+                    }.awaitAll().flatten()
+
+                    for (ep in chunkResults) {
+                        allEpisodesMap["${ep.showId}_${ep.episodeId}_${ep.releaseDateIso}"] = ep
+                    }
+
+                    val currentEpisodes = allEpisodesMap.values.toList()
+                    val currentGrouped = currentEpisodes.groupBy { it.releaseDateIso }
+
+                    _uiState.update { current ->
+                        current.copy(
+                            isLoading = false,
+                            allEpisodes = currentEpisodes,
+                            episodesByDate = currentGrouped,
+                            trackedShowsCount = series.size,
+                        )
                     }
                 }
 
-                val allEpisodes = deferredEpisodes.awaitAll().flatten()
-                cachedEpisodes = allEpisodes
-                val grouped = allEpisodes.groupBy { it.releaseDateIso }
+                val finalEpisodes = allEpisodesMap.values.toList()
+                cachedEpisodes = finalEpisodes
+                val finalGrouped = finalEpisodes.groupBy { it.releaseDateIso }
 
                 _uiState.update { current ->
                     current.copy(
                         isLoading = false,
                         isRefreshing = false,
-                        allEpisodes = allEpisodes,
-                        episodesByDate = grouped,
+                        allEpisodes = finalEpisodes,
+                        episodesByDate = finalGrouped,
                         trackedShowsCount = series.size,
                         errorMessage = null,
                     )
                 }
 
-                // Save to disk asynchronously
+                // Save latest to disk
                 runCatching {
-                    val serialized = json.encodeToString(allEpisodes)
+                    val serialized = json.encodeToString(finalEpisodes)
                     CalendarStorage.savePayload(serialized)
                 }
             } catch (e: Exception) {
@@ -154,12 +185,13 @@ object CalendarRepository {
             MetaDetailsRepository.fetch(
                 type = show.type,
                 id = show.id,
-                cacheResult = true,
+                cacheResult = false,
             )
         }.getOrNull() ?: return emptyList()
 
         val showTitle = meta.name.ifBlank { show.name }
-        val poster = show.poster ?: meta.poster
+        // Ensure vertical poster is prioritized
+        val poster = meta.poster ?: show.poster ?: meta.videos.firstOrNull()?.seasonPoster
 
         return meta.videos.mapNotNull { video ->
             val releaseDate = parseEpisodeReleaseLocalDate(video.released) ?: return@mapNotNull null

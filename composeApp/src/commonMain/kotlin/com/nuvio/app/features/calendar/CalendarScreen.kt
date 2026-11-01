@@ -1,6 +1,5 @@
 package com.nuvio.app.features.calendar
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -45,14 +44,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -68,10 +64,7 @@ import com.nuvio.app.core.time.EpisodeReleaseDatePlatform
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.nuvio
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.calendar_empty_subtitle
-import nuvio.composeapp.generated.resources.calendar_empty_title
 import nuvio.composeapp.generated.resources.calendar_refresh
-import nuvio.composeapp.generated.resources.calendar_title
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -88,10 +81,9 @@ fun CalendarScreen(
         EpisodeReleaseDatePlatform.localIsoDateAtEpochMs(nowMs) ?: "2026-11-01"
     }
 
+    // Always trigger background refresh so latest episodes and new releases appear automatically
     LaunchedEffect(Unit) {
-        if (state.allEpisodes.isEmpty() && !state.isLoading) {
-            CalendarRepository.refresh()
-        }
+        CalendarRepository.refresh()
     }
 
     BoxWithConstraints(
@@ -182,7 +174,7 @@ fun CalendarScreen(
                         }
                     }
                 } else {
-                    // Mobile / narrow layout: scrollable grid with agenda underneath
+                    // Narrow layout: scrollable grid with agenda underneath
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -281,7 +273,7 @@ private fun CalendarMonthNavigationHeader(
                 )
             }
 
-            // Previous Month name (subtle, clickable)
+            // Previous Month name
             Text(
                 text = CalendarDateUtils.getMonthName(prevMonth.month),
                 style = MaterialTheme.typography.bodyLarge.copy(
@@ -310,7 +302,7 @@ private fun CalendarMonthNavigationHeader(
                 )
             }
 
-            // Next Month name (subtle, clickable)
+            // Next Month name
             Text(
                 text = CalendarDateUtils.getMonthName(nextMonth.month),
                 style = MaterialTheme.typography.bodyLarge.copy(
@@ -539,54 +531,67 @@ private fun CalendarDayGridCell(
                 }
             }
 
-            // Episode Mini Posters Row (Stremio style!)
+            // Episode Mini Posters Row - STRICTLY VERTICAL (Stremio style!)
             if (episodes.isNotEmpty()) {
-                Row(
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.Bottom,
                 ) {
-                    val displayEpisodes = episodes.take(3)
-                    displayEpisodes.forEach { ep ->
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color.Black.copy(alpha = 0.5f))
-                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
-                                .clickable { onEpisodeClick(ep.showType, ep.showId) },
-                        ) {
-                            val posterUrl = ep.showPoster ?: ep.thumbnail
-                            if (!posterUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = posterUrl,
-                                    contentDescription = ep.showTitle,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
+                    val availableWidth = maxWidth
+                    val posterWidth = 34.dp
+                    val posterHeight = 51.dp // 2:3 ratio
+                    val maxPosters = ((availableWidth.value) / 38).toInt().coerceIn(1, 4)
+                    val showCount = if (episodes.size > maxPosters) (maxPosters - 1).coerceAtLeast(1) else episodes.size
+                    val displayEpisodes = episodes.take(showCount)
+                    val remaining = episodes.size - showCount
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.Start),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        displayEpisodes.forEach { ep ->
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color.Black.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                                modifier = Modifier
+                                    .width(posterWidth)
+                                    .height(posterHeight)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .clickable { onEpisodeClick(ep.showType, ep.showId) },
+                            ) {
+                                val posterUrl = ep.showPoster ?: ep.thumbnail
+                                if (!posterUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = posterUrl,
+                                        contentDescription = ep.showTitle,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    if (episodes.size > 3) {
-                        Box(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color.White.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = "+${episodes.size - 3}",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                ),
-                            )
+                        if (remaining > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .width(22.dp)
+                                    .height(posterHeight)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color.White.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "+$remaining",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                    ),
+                                )
+                            }
                         }
                     }
                 }
@@ -609,13 +614,11 @@ private fun CalendarAgendaSidebar(
 ) {
     val tokens = MaterialTheme.nuvio
 
-    // If a day is selected, show that day's episodes; otherwise show all upcoming episodes for the month
     val displayGroups: List<Pair<String, List<CalendarEpisodeItem>>> = remember(selectedDateIso, month, episodesByDate, allEpisodes) {
         if (!selectedDateIso.isNullOrBlank()) {
             val items = episodesByDate[selectedDateIso].orEmpty()
             if (items.isNotEmpty()) listOf(selectedDateIso to items) else emptyList()
         } else {
-            // Filter episodes matching the current displayed month
             val monthPrefix = "${month.year}-${month.month.toString().padStart(2, '0')}"
             episodesByDate
                 .filterKeys { it.startsWith(monthPrefix) }
@@ -731,7 +734,7 @@ private fun AgendaEpisodeItemRow(
     val surfaceColor = if (isHovered) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.03f)
 
     Surface(
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         color = surfaceColor,
         border = BorderStroke(1.dp, if (isHovered) tokens.colors.accent.copy(alpha = 0.35f) else Color.Transparent),
         modifier = Modifier
@@ -744,14 +747,17 @@ private fun AgendaEpisodeItemRow(
                 .fillMaxWidth()
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Thumbnail
-            Box(
+            // STRICTLY VERTICAL POSTER (2:3 aspect ratio)
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color.Black.copy(alpha = 0.4f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
                 modifier = Modifier
-                    .size(width = 46.dp, height = 64.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Black.copy(alpha = 0.3f)),
+                    .width(52.dp)
+                    .height(78.dp)
+                    .clip(RoundedCornerShape(8.dp)),
             ) {
                 val img = episode.showPoster ?: episode.thumbnail
                 if (!img.isNullOrBlank()) {
@@ -767,7 +773,7 @@ private fun AgendaEpisodeItemRow(
             // Info
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = episode.showTitle,
@@ -781,13 +787,20 @@ private fun AgendaEpisodeItemRow(
 
                 val code = localizedSeasonEpisodeCode(episode.seasonNumber, episode.episodeNumber)
                 if (!code.isNullOrBlank()) {
-                    Text(
-                        text = code,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = tokens.colors.accent,
-                        ),
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(tokens.colors.accent.copy(alpha = 0.18f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = code,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = tokens.colors.accent,
+                            ),
+                        )
+                    }
                 }
 
                 if (!episode.episodeTitle.isNullOrBlank()) {
