@@ -79,7 +79,6 @@ object CalendarRepository {
                     val grouped = list.groupBy { it.releaseDateIso }
                     _uiState.update { current ->
                         current.copy(
-                            allEpisodes = list,
                             episodesByDate = grouped,
                             isLoading = false,
                         )
@@ -119,7 +118,6 @@ object CalendarRepository {
                             it.copy(
                                 isLoading = false,
                                 isRefreshing = false,
-                                allEpisodes = emptyList(),
                                 episodesByDate = emptyMap(),
                                 trackedShowsCount = 0,
                             )
@@ -162,7 +160,6 @@ object CalendarRepository {
                     _uiState.update { current ->
                         current.copy(
                             isLoading = false,
-                            allEpisodes = currentEpisodes,
                             episodesByDate = currentGrouped,
                             trackedShowsCount = series.size,
                         )
@@ -177,7 +174,6 @@ object CalendarRepository {
                     current.copy(
                         isLoading = false,
                         isRefreshing = false,
-                        allEpisodes = finalEpisodes,
                         episodesByDate = finalGrouped,
                         trackedShowsCount = series.size,
                         errorMessage = null,
@@ -208,9 +204,11 @@ object CalendarRepository {
             )
         }.getOrNull() ?: return emptyList()
 
-        val showTitle = meta.name.ifBlank { show.name }
-        // Ensure vertical poster is prioritized
-        val poster = meta.poster ?: show.poster ?: meta.videos.firstOrNull()?.seasonPoster
+        val showTitle = meta.name.ifBlank { show.name }.intern()
+        val showType = show.type.intern()
+        val showId = show.id.intern()
+        // Ensure vertical poster is prioritized and interned
+        val poster = (meta.poster ?: show.poster ?: meta.videos.firstOrNull()?.seasonPoster)?.intern()
 
         return meta.videos.mapNotNull { video ->
             val releaseDate = parseEpisodeReleaseLocalDate(video.released) ?: return@mapNotNull null
@@ -218,19 +216,24 @@ object CalendarRepository {
                 daysUntilEpisodeRelease(todayIso, releaseDate)
             } else null
 
+            // Drop past episodes older than 180 days (6 months) to minimize heap and state bloat
+            if (daysDiff != null && daysDiff < -180) {
+                return@mapNotNull null
+            }
+
             CalendarEpisodeItem(
-                showId = show.id,
-                showType = show.type,
+                showId = showId,
+                showType = showType,
                 showTitle = showTitle,
                 showPoster = poster,
                 episodeId = video.id,
                 seasonNumber = video.season,
                 episodeNumber = video.episode,
                 episodeTitle = video.title,
-                releaseDateIso = releaseDate,
+                releaseDateIso = releaseDate.intern(),
                 daysUntilRelease = daysDiff,
-                thumbnail = video.thumbnail ?: video.seasonPoster ?: meta.background ?: poster,
-                overview = video.overview,
+                thumbnail = if (poster == null) video.thumbnail ?: video.seasonPoster else null,
+                overview = null,
                 posterShape = show.posterShape,
             )
         }

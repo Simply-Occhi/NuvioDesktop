@@ -4,7 +4,7 @@ import coil3.ComponentRegistry
 import coil3.ImageLoader
 import coil3.memory.MemoryCache
 
-private const val ImageMemoryCacheBytes = 256L * 1024 * 1024
+private const val ImageMemoryCacheBytes = 64L * 1024 * 1024
 
 internal actual val platformProvidesImageLoader: Boolean = false
 

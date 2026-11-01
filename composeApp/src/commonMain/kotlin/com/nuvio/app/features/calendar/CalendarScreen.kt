@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.i18n.localizedSeasonEpisodeCode
 import com.nuvio.app.core.time.EpisodeReleaseDatePlatform
@@ -121,7 +123,7 @@ fun CalendarScreen(
                 )
             }
 
-            if (state.isLoading && state.allEpisodes.isEmpty()) {
+            if (state.isLoading && state.episodesByDate.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
@@ -168,7 +170,6 @@ fun CalendarScreen(
                                 todayIso = todayIso,
                                 selectedDateIso = state.selectedDateIso,
                                 episodesByDate = state.episodesByDate,
-                                allEpisodes = state.allEpisodes,
                                 onEpisodeClick = onPosterClick,
                             )
                         }
@@ -195,7 +196,6 @@ fun CalendarScreen(
                             todayIso = todayIso,
                             selectedDateIso = state.selectedDateIso,
                             episodesByDate = state.episodesByDate,
-                            allEpisodes = state.allEpisodes,
                             onEpisodeClick = onPosterClick,
                             modifier = Modifier.height(400.dp),
                         )
@@ -576,8 +576,15 @@ private fun CalendarDayGridCell(
                             ) {
                                 val posterUrl = ep.showPoster ?: ep.thumbnail
                                 if (!posterUrl.isNullOrBlank()) {
+                                    val platformContext = LocalPlatformContext.current
+                                    val imageRequest = remember(posterUrl, platformContext) {
+                                        ImageRequest.Builder(platformContext)
+                                            .data(posterUrl)
+                                            .size(180, 270)
+                                            .build()
+                                    }
                                     AsyncImage(
-                                        model = posterUrl,
+                                        model = imageRequest,
                                         contentDescription = ep.showTitle,
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop,
@@ -636,13 +643,12 @@ private fun CalendarAgendaSidebar(
     todayIso: String,
     selectedDateIso: String?,
     episodesByDate: Map<String, List<CalendarEpisodeItem>>,
-    allEpisodes: List<CalendarEpisodeItem>,
     onEpisodeClick: (type: String, id: String, title: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
 
-    val displayGroups: List<Pair<String, List<CalendarEpisodeItem>>> = remember(selectedDateIso, month, episodesByDate, allEpisodes) {
+    val displayGroups: List<Pair<String, List<CalendarEpisodeItem>>> = remember(selectedDateIso, month, episodesByDate) {
         if (!selectedDateIso.isNullOrBlank()) {
             val items = episodesByDate[selectedDateIso].orEmpty()
             if (items.isNotEmpty()) listOf(selectedDateIso to items) else emptyList()
@@ -789,8 +795,15 @@ private fun AgendaEpisodeItemRow(
             ) {
                 val img = episode.showPoster ?: episode.thumbnail
                 if (!img.isNullOrBlank()) {
+                    val platformContext = LocalPlatformContext.current
+                    val imageRequest = remember(img, platformContext) {
+                        ImageRequest.Builder(platformContext)
+                            .data(img)
+                            .size(270, 405)
+                            .build()
+                    }
                     AsyncImage(
-                        model = img,
+                        model = imageRequest,
                         contentDescription = episode.showTitle,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,

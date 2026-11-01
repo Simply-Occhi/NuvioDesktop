@@ -39,11 +39,13 @@ data class CalendarUiState(
     val isRefreshing: Boolean = false,
     val currentMonth: CalendarMonth = CalendarDateUtils.todayMonth(),
     val selectedDateIso: String? = null,
-    val allEpisodes: List<CalendarEpisodeItem> = emptyList(),
     val episodesByDate: Map<String, List<CalendarEpisodeItem>> = emptyMap(),
     val trackedShowsCount: Int = 0,
     val errorMessage: String? = null,
-)
+) {
+    val totalEpisodesCount: Int
+        get() = episodesByDate.values.sumOf { it.size }
+}
 
 object CalendarDateUtils {
     fun daysInMonth(year: Int, month: Int): Int = when (month) {
