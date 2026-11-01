@@ -112,7 +112,10 @@ object CalendarDateUtils {
     }
 
     fun todayMonth(): CalendarMonth {
-        // Fallback default
-        return CalendarMonth(2026, 11)
+        val nowMs = com.nuvio.app.core.time.EpisodeReleaseDatePlatform.nowEpochMs()
+        val todayIso = com.nuvio.app.core.time.EpisodeReleaseDatePlatform.localIsoDateAtEpochMs(nowMs)
+        val y = todayIso?.substring(0, 4)?.toIntOrNull() ?: 2026
+        val m = todayIso?.substring(5, 7)?.toIntOrNull() ?: 11
+        return CalendarMonth(y, m)
     }
 }

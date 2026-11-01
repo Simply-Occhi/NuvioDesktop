@@ -71,7 +71,7 @@ import org.jetbrains.compose.resources.stringResource
 fun CalendarScreen(
     modifier: Modifier = Modifier,
     topChromePadding: Dp = 0.dp,
-    onPosterClick: (type: String, id: String) -> Unit,
+    onPosterClick: (type: String, id: String, title: String) -> Unit,
 ) {
     val state by CalendarRepository.uiState.collectAsStateWithLifecycle()
     val tokens = MaterialTheme.nuvio
@@ -352,7 +352,7 @@ private fun CalendarMonthGrid(
     selectedDateIso: String?,
     episodesByDate: Map<String, List<CalendarEpisodeItem>>,
     onDateSelected: (String) -> Unit,
-    onEpisodeClick: (type: String, id: String) -> Unit,
+    onEpisodeClick: (type: String, id: String, title: String) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     val daysInMonth = CalendarDateUtils.daysInMonth(month.year, month.month)
@@ -457,7 +457,7 @@ private fun CalendarDayGridCell(
     isSelected: Boolean,
     episodes: List<CalendarEpisodeItem>,
     onClick: () -> Unit,
-    onEpisodeClick: (type: String, id: String) -> Unit,
+    onEpisodeClick: (type: String, id: String, title: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -572,7 +572,7 @@ private fun CalendarDayGridCell(
                                     .width(posterWidth)
                                     .height(posterHeight)
                                     .clip(RoundedCornerShape(6.dp))
-                                    .clickable { onEpisodeClick(ep.showType, ep.showId) },
+                                    .clickable { onEpisodeClick(ep.showType, ep.showId, ep.showTitle) },
                             ) {
                                 val posterUrl = ep.showPoster ?: ep.thumbnail
                                 if (!posterUrl.isNullOrBlank()) {
@@ -582,6 +582,22 @@ private fun CalendarDayGridCell(
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop,
                                     )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.White.copy(alpha = 0.08f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = ep.showTitle.take(2).uppercase(),
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                color = tokens.colors.accent,
+                                                fontSize = 11.sp,
+                                            ),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -621,7 +637,7 @@ private fun CalendarAgendaSidebar(
     selectedDateIso: String?,
     episodesByDate: Map<String, List<CalendarEpisodeItem>>,
     allEpisodes: List<CalendarEpisodeItem>,
-    onEpisodeClick: (type: String, id: String) -> Unit,
+    onEpisodeClick: (type: String, id: String, title: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -725,7 +741,7 @@ private fun CalendarAgendaSidebar(
                     ) { episode ->
                         AgendaEpisodeItemRow(
                             episode = episode,
-                            onClick = { onEpisodeClick(episode.showType, episode.showId) },
+                            onClick = { onEpisodeClick(episode.showType, episode.showId, episode.showTitle) },
                         )
                     }
                 }
@@ -779,6 +795,21 @@ private fun AgendaEpisodeItemRow(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.White.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = episode.showTitle.take(2).uppercase(),
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = tokens.colors.accent,
+                            ),
+                        )
+                    }
                 }
             }
 

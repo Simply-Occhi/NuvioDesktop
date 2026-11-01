@@ -290,9 +290,9 @@ internal fun AppTabHost(
                 CalendarScreen(
                     modifier = Modifier.fillMaxSize(),
                     topChromePadding = state.topChromePadding ?: 0.dp,
-                    onPosterClick = { type, id ->
+                    onPosterClick = { type, id, title ->
                         actions.onPosterClick?.invoke(
-                            MetaPreview(id = id, type = type, name = "")
+                            MetaPreview(id = id, type = type, name = title)
                         )
                     },
                 )
