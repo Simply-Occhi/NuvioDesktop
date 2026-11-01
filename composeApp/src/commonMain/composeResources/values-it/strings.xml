@@ -147,6 +147,17 @@
   <string name="compose_catalog_subtitle_trakt_library">Libreria Trakt</string>
   <string name="compose_nav_home">Home</string>
   <string name="compose_nav_library">Libreria</string>
+  <string name="compose_nav_calendar">Calendario</string>
+  <string name="calendar_title">Calendario Uscite</string>
+  <string name="calendar_empty_title">Nessuna uscita programmata</string>
+  <string name="calendar_empty_subtitle">Segui serie TV nella tua libreria per vedere i prossimi episodi qui.</string>
+  <string name="calendar_filter_all">Tutto</string>
+  <string name="calendar_filter_7_days">7 Giorni</string>
+  <string name="calendar_filter_30_days">30 Giorni</string>
+  <string name="calendar_today">Oggi</string>
+  <string name="calendar_tomorrow">Domani</string>
+  <string name="calendar_yesterday">Ieri</string>
+  <string name="calendar_refresh">Aggiorna</string>
   <string name="compose_nav_profile">Profilo</string>
   <string name="compose_nav_search">Cerca</string>
   <string name="compose_nav_settings">Impostazioni</string>

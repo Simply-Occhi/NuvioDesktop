@@ -54,11 +54,13 @@ import com.nuvio.app.features.settings.ThemeSettingsRepository
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.compose_nav_calendar
 import nuvio.composeapp.generated.resources.compose_nav_home
 import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_profile
 import nuvio.composeapp.generated.resources.compose_nav_search
 import nuvio.composeapp.generated.resources.compose_nav_settings
+import nuvio.composeapp.generated.resources.sidebar_calendar
 import nuvio.composeapp.generated.resources.sidebar_library
 import nuvio.composeapp.generated.resources.sidebar_search
 import org.jetbrains.compose.resources.stringResource
@@ -161,6 +163,12 @@ internal fun MainTabsDestination(
                 label = stringResource(Res.string.compose_nav_library),
             ),
             FloatingNavigationItem(
+                selected = selectedTab == AppScreenTab.Calendar,
+                onClick = { onTabSelected(AppScreenTab.Calendar) },
+                drawable = Res.drawable.sidebar_calendar,
+                label = stringResource(Res.string.compose_nav_calendar),
+            ),
+            FloatingNavigationItem(
                 selected = selectedTab == AppScreenTab.Settings,
                 onClick = { onTabSelected(AppScreenTab.Settings) },
                 label = stringResource(if (isDesktop) Res.string.compose_nav_settings else Res.string.compose_nav_profile),
@@ -205,6 +213,12 @@ internal fun MainTabsDestination(
                             onClick = { onTabSelected(AppScreenTab.Library) },
                             icon = Res.drawable.sidebar_library,
                             contentDescription = stringResource(Res.string.compose_nav_library),
+                        )
+                        NavItem(
+                            selected = selectedTab == AppScreenTab.Calendar,
+                            onClick = { onTabSelected(AppScreenTab.Calendar) },
+                            icon = Res.drawable.sidebar_calendar,
+                            contentDescription = stringResource(Res.string.compose_nav_calendar),
                         )
                         NavItem(
                             selected = selectedTab == AppScreenTab.Settings,

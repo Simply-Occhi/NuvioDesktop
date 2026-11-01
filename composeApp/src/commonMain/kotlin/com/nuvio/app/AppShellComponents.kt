@@ -67,6 +67,7 @@ import com.nuvio.app.core.ui.NuvioLoadingIndicator
 import com.nuvio.app.core.ui.NuvioNavBarScrollState
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.calendar.CalendarScreen
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.cloud.CloudLibraryFile
 import com.nuvio.app.features.cloud.CloudLibraryItem
@@ -102,12 +103,14 @@ import dev.chrisbanes.haze.hazeEffect
 import kotlinx.coroutines.flow.Flow
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.app_brand_name
+import nuvio.composeapp.generated.resources.compose_nav_calendar
 import nuvio.composeapp.generated.resources.compose_nav_home
 import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_profile
 import nuvio.composeapp.generated.resources.compose_nav_search
 import nuvio.composeapp.generated.resources.compose_nav_settings
 import nuvio.composeapp.generated.resources.compose_settings_page_root
+import nuvio.composeapp.generated.resources.sidebar_calendar
 import nuvio.composeapp.generated.resources.sidebar_library
 import nuvio.composeapp.generated.resources.sidebar_search
 import org.jetbrains.compose.resources.painterResource
@@ -280,6 +283,18 @@ internal fun AppTabHost(
                     onPreviewLongClick = actions.onPosterLongClick,
                     onDownloadsClick = actions.onDownloadsClick,
                     disintegrationRequest = state.libraryDisintegrationRequest,
+                )
+            }
+
+            AppScreenTab.Calendar -> {
+                CalendarScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    topChromePadding = state.topChromePadding ?: 0.dp,
+                    onPosterClick = { type, id ->
+                        actions.onPosterClick?.invoke(
+                            MetaPreview(id = id, type = type, name = "")
+                        )
+                    },
                 )
             }
 
@@ -568,6 +583,28 @@ internal fun TabletFloatingTopBar(
                                 contentDescription = stringResource(Res.string.compose_nav_library),
                                 modifier = Modifier.size(navIconSize),
                                 tint = if (selectedTab == AppScreenTab.Library) {
+                                    tokens.colors.textPrimary
+                                } else {
+                                    Color.White.copy(alpha = 0.70f)
+                                },
+                            )
+                        },
+                    )
+                    TabletTopPillItem(
+                        label = stringResource(Res.string.compose_nav_calendar),
+                        selected = selectedTab == AppScreenTab.Calendar,
+                        onClick = { onTabSelected(AppScreenTab.Calendar) },
+                        labelFraction = labelFraction,
+                        pillHeight = pillHeight,
+                        expandedHorizontalPadding = expandedHorizontalPadding,
+                        collapsedHorizontalPadding = iconCollapsedPadding,
+                        textStyle = labelTextStyle,
+                        icon = {
+                            Icon(
+                                painter = painterResource(Res.drawable.sidebar_calendar),
+                                contentDescription = stringResource(Res.string.compose_nav_calendar),
+                                modifier = Modifier.size(navIconSize),
+                                tint = if (selectedTab == AppScreenTab.Calendar) {
                                     tokens.colors.textPrimary
                                 } else {
                                     Color.White.copy(alpha = 0.70f)
