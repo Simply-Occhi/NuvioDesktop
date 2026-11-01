@@ -898,6 +898,19 @@ internal fun DesktopHoverSidebar(
                     )
                 }
                 DesktopSidebarItem(
+                    label = stringResource(Res.string.compose_nav_calendar),
+                    selected = selectedTab == AppScreenTab.Calendar,
+                    expanded = sidebarExpanded,
+                    onClick = { selectTab(AppScreenTab.Calendar) },
+                ) { color ->
+                    Icon(
+                        painter = painterResource(Res.drawable.sidebar_calendar),
+                        contentDescription = stringResource(Res.string.compose_nav_calendar),
+                        modifier = Modifier.size(DesktopSidebarIconSize),
+                        tint = color,
+                    )
+                }
+                DesktopSidebarItem(
                     label = stringResource(Res.string.compose_settings_page_root),
                     selected = selectedTab == AppScreenTab.Settings,
                     expanded = sidebarExpanded,
