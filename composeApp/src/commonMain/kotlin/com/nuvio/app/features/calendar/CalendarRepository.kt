@@ -52,8 +52,8 @@ object CalendarRepository {
 
         scope.launch {
             LibraryRepository.uiState
+                .filter { it.isLoaded }
                 .map { it.items }
-                .filter { it.isNotEmpty() }
                 .distinctUntilChanged()
                 .collectLatest {
                     refresh()
@@ -106,10 +106,27 @@ object CalendarRepository {
 
             try {
                 LibraryRepository.ensureLoaded()
-                val libraryItems = LibraryRepository.uiState.value.items
+                val libraryState = LibraryRepository.uiState.value
+                val libraryItems = libraryState.items
                 val series = libraryItems.filter { isSeries(it.type) }
+                val validSeriesIds = series.map { it.id }.toSet()
+
                 if (series.isEmpty()) {
-                    _uiState.update { it.copy(isLoading = false, isRefreshing = false) }
+                    if (libraryState.isLoaded) {
+                        cachedEpisodes = emptyList()
+                        runCatching { CalendarStorage.savePayload("[]") }
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                isRefreshing = false,
+                                allEpisodes = emptyList(),
+                                episodesByDate = emptyMap(),
+                                trackedShowsCount = 0,
+                            )
+                        }
+                    } else {
+                        _uiState.update { it.copy(isLoading = false, isRefreshing = false) }
+                    }
                     return@launch
                 }
 
@@ -118,7 +135,9 @@ object CalendarRepository {
                 val nowMs = EpisodeReleaseDatePlatform.nowEpochMs()
                 val todayIso = EpisodeReleaseDatePlatform.localIsoDateAtEpochMs(nowMs) ?: "2026-11-01"
 
+                // Seed with cached episodes that still belong to currently tracked series
                 val allEpisodesMap = cachedEpisodes
+                    .filter { it.showId in validSeriesIds }
                     .associateBy { "${it.showId}_${it.episodeId}_${it.releaseDateIso}" }
                     .toMutableMap()
 
@@ -218,7 +237,7 @@ object CalendarRepository {
     }
 
     private fun isSeries(type: String): Boolean = when (type.trim().lowercase()) {
-        "tv", "show", "series", "tvshow" -> true
+        "tv", "show", "series", "tvshow", "anime" -> true
         else -> false
     }
 }
