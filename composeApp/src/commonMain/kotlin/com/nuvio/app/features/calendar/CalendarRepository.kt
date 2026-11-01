@@ -1,7 +1,6 @@
 package com.nuvio.app.features.calendar
 
 import co.touchlab.kermit.Logger
-import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.time.EpisodeReleaseDatePlatform
 import com.nuvio.app.core.time.daysUntilEpisodeRelease
 import com.nuvio.app.core.time.parseEpisodeReleaseLocalDate
@@ -24,18 +23,32 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 object CalendarRepository {
     private val log = Logger.withTag("CalendarRepository")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
     private var refreshJob: Job? = null
 
-    private val _uiState = MutableStateFlow(CalendarUiState())
+    private val initialMonth: CalendarMonth by lazy {
+        val nowMs = EpisodeReleaseDatePlatform.nowEpochMs()
+        val todayIso = EpisodeReleaseDatePlatform.localIsoDateAtEpochMs(nowMs) ?: "2026-11-01"
+        val y = todayIso.substring(0, 4).toIntOrNull() ?: 2026
+        val m = todayIso.substring(5, 7).toIntOrNull() ?: 11
+        CalendarMonth(y, m)
+    }
+
+    private val _uiState = MutableStateFlow(CalendarUiState(currentMonth = initialMonth))
     val uiState: StateFlow<CalendarUiState> = _uiState.asStateFlow()
 
     private var cachedEpisodes: List<CalendarEpisodeItem> = emptyList()
 
     init {
+        loadPersistedCache()
+
         scope.launch {
             LibraryRepository.uiState
                 .map { it.items }
@@ -46,26 +59,57 @@ object CalendarRepository {
         }
     }
 
-    fun setFilter(filter: CalendarFilter) {
-        _uiState.update { current ->
-            current.copy(
-                selectedFilter = filter,
-                groups = buildGroups(cachedEpisodes, filter),
-            )
+    fun selectMonth(month: CalendarMonth) {
+        _uiState.update { it.copy(currentMonth = month) }
+    }
+
+    fun selectDate(dateIso: String?) {
+        _uiState.update { it.copy(selectedDateIso = dateIso) }
+    }
+
+    private fun loadPersistedCache() {
+        runCatching {
+            val payload = CalendarStorage.loadPayload()
+            if (!payload.isNullOrBlank()) {
+                val list = json.decodeFromString<List<CalendarEpisodeItem>>(payload)
+                if (list.isNotEmpty()) {
+                    cachedEpisodes = list
+                    val grouped = list.groupBy { it.releaseDateIso }
+                    _uiState.update { current ->
+                        current.copy(
+                            allEpisodes = list,
+                            episodesByDate = grouped,
+                            isLoading = false,
+                        )
+                    }
+                    log.d { "Loaded ${list.size} cached calendar episodes from disk" }
+                }
+            }
+        }.onFailure {
+            log.w(it) { "Could not load cached calendar payload: ${it.message}" }
         }
     }
 
     fun refresh() {
         refreshJob?.cancel()
         refreshJob = scope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasExistingData = cachedEpisodes.isNotEmpty()
+            _uiState.update {
+                it.copy(
+                    isLoading = !hasExistingData,
+                    isRefreshing = true,
+                    errorMessage = null,
+                )
+            }
+
             try {
                 val libraryItems = LibraryRepository.uiState.value.items
                 val series = libraryItems.filter { isSeries(it.type) }
-                val concurrencySemaphore = Semaphore(4)
+                // High concurrency for fast parallel fetches
+                val concurrencySemaphore = Semaphore(24)
 
                 val nowMs = EpisodeReleaseDatePlatform.nowEpochMs()
-                val todayIso = EpisodeReleaseDatePlatform.localIsoDateAtEpochMs(nowMs) ?: ""
+                val todayIso = EpisodeReleaseDatePlatform.localIsoDateAtEpochMs(nowMs) ?: "2026-11-01"
 
                 val deferredEpisodes = series.map { show ->
                     async {
@@ -77,21 +121,27 @@ object CalendarRepository {
 
                 val allEpisodes = deferredEpisodes.awaitAll().flatten()
                 cachedEpisodes = allEpisodes
-
-                val groups = buildGroups(allEpisodes, _uiState.value.selectedFilter)
+                val grouped = allEpisodes.groupBy { it.releaseDateIso }
 
                 _uiState.update { current ->
                     current.copy(
                         isLoading = false,
-                        groups = groups,
-                        totalEpisodesCount = allEpisodes.size,
+                        isRefreshing = false,
+                        allEpisodes = allEpisodes,
+                        episodesByDate = grouped,
                         trackedShowsCount = series.size,
                         errorMessage = null,
                     )
                 }
+
+                // Save to disk asynchronously
+                runCatching {
+                    val serialized = json.encodeToString(allEpisodes)
+                    CalendarStorage.savePayload(serialized)
+                }
             } catch (e: Exception) {
-                log.w(e) { "Failed to refresh release calendar: ${e.message}" }
-                _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
+                log.w(e) { "Failed to refresh calendar: ${e.message}" }
+                _uiState.update { it.copy(isLoading = false, isRefreshing = false, errorMessage = e.message) }
             }
         }
     }
@@ -117,11 +167,6 @@ object CalendarRepository {
                 daysUntilEpisodeRelease(todayIso, releaseDate)
             } else null
 
-            // Show episodes from the last 7 days through all upcoming dates
-            if (daysDiff != null && daysDiff < -7) {
-                return@mapNotNull null
-            }
-
             CalendarEpisodeItem(
                 showId = show.id,
                 showType = show.type,
@@ -138,48 +183,6 @@ object CalendarRepository {
                 posterShape = show.posterShape,
             )
         }
-    }
-
-    private fun buildGroups(
-        episodes: List<CalendarEpisodeItem>,
-        filter: CalendarFilter,
-    ): List<CalendarDayGroup> {
-        val filtered = when (filter) {
-            CalendarFilter.ALL -> episodes
-            CalendarFilter.DAYS_7 -> episodes.filter { (it.daysUntilRelease ?: Int.MAX_VALUE) in 0..7 }
-            CalendarFilter.DAYS_30 -> episodes.filter { (it.daysUntilRelease ?: Int.MAX_VALUE) in 0..30 }
-        }
-
-        return filtered
-            .sortedWith(
-                compareBy<CalendarEpisodeItem> { it.releaseDateIso }
-                    .thenBy { it.showTitle }
-                    .thenBy { it.seasonNumber ?: 0 }
-                    .thenBy { it.episodeNumber ?: 0 }
-            )
-            .groupBy { it.releaseDateIso }
-            .map { (dateIso, itemsForDate) ->
-                val daysDiff = itemsForDate.firstOrNull()?.daysUntilRelease
-                val isToday = daysDiff == 0
-                val isTomorrow = daysDiff == 1
-                val isYesterday = daysDiff == -1
-
-                val displayDate = formatReleaseDateForDisplay(dateIso)
-                val label = when {
-                    isToday -> "Oggi • $displayDate"
-                    isTomorrow -> "Domani • $displayDate"
-                    isYesterday -> "Ieri • $displayDate"
-                    else -> displayDate
-                }
-
-                CalendarDayGroup(
-                    dateIso = dateIso,
-                    label = label,
-                    isToday = isToday,
-                    isTomorrow = isTomorrow,
-                    episodes = itemsForDate,
-                )
-            }
     }
 
     private fun isSeries(type: String): Boolean = when (type.trim().lowercase()) {

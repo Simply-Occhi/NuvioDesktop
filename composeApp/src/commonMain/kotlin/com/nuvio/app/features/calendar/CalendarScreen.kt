@@ -1,22 +1,23 @@
 package com.nuvio.app.features.calendar
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,22 +26,28 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.DateRange
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,20 +56,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.format.formatReleaseDateForDisplay
 import com.nuvio.app.core.i18n.localizedSeasonEpisodeCode
+import com.nuvio.app.core.time.EpisodeReleaseDatePlatform
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.nuvio
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.calendar_empty_subtitle
 import nuvio.composeapp.generated.resources.calendar_empty_title
-import nuvio.composeapp.generated.resources.calendar_filter_30_days
-import nuvio.composeapp.generated.resources.calendar_filter_7_days
-import nuvio.composeapp.generated.resources.calendar_filter_all
 import nuvio.composeapp.generated.resources.calendar_refresh
 import nuvio.composeapp.generated.resources.calendar_title
 import org.jetbrains.compose.resources.stringResource
@@ -75,70 +82,130 @@ fun CalendarScreen(
 ) {
     val state by CalendarRepository.uiState.collectAsStateWithLifecycle()
     val tokens = MaterialTheme.nuvio
-    val listState = rememberLazyListState()
+
+    val nowMs = remember { EpisodeReleaseDatePlatform.nowEpochMs() }
+    val todayIso = remember(nowMs) {
+        EpisodeReleaseDatePlatform.localIsoDateAtEpochMs(nowMs) ?: "2026-11-01"
+    }
 
     LaunchedEffect(Unit) {
-        if (state.groups.isEmpty() && !state.isLoading) {
+        if (state.allEpisodes.isEmpty() && !state.isLoading) {
             CalendarRepository.refresh()
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(tokens.colors.background)
     ) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                top = topChromePadding + 20.dp,
-                bottom = 48.dp,
-                start = 24.dp,
-                end = 24.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+        val isWideLayout = maxWidth >= 960.dp
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = topChromePadding + 12.dp, bottom = 24.dp, start = 24.dp, end = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item(key = "calendar_header") {
-                CalendarHeader(
-                    state = state,
-                    onFilterChange = { CalendarRepository.setFilter(it) },
-                    onRefresh = { CalendarRepository.refresh() },
+            // Month navigation bar (Stremio style)
+            CalendarMonthNavigationHeader(
+                currentMonth = state.currentMonth,
+                isRefreshing = state.isRefreshing,
+                onMonthSelect = { CalendarRepository.selectMonth(it) },
+                onTodayClick = {
+                    val y = todayIso.substring(0, 4).toIntOrNull() ?: 2026
+                    val m = todayIso.substring(5, 7).toIntOrNull() ?: 11
+                    CalendarRepository.selectMonth(CalendarMonth(y, m))
+                    CalendarRepository.selectDate(todayIso)
+                },
+                onRefresh = { CalendarRepository.refresh() },
+            )
+
+            if (state.isRefreshing) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = tokens.colors.accent,
+                    trackColor = Color.Transparent,
                 )
             }
 
-            if (state.isLoading && state.groups.isEmpty()) {
-                item(key = "calendar_loading") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 64.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(
-                            color = tokens.colors.accent,
-                            modifier = Modifier.size(36.dp),
-                            strokeWidth = 3.dp,
-                        )
-                    }
-                }
-            } else if (state.groups.isEmpty()) {
-                item(key = "calendar_empty") {
-                    CalendarEmptyState()
+            if (state.isLoading && state.allEpisodes.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        color = tokens.colors.accent,
+                        modifier = Modifier.size(36.dp),
+                        strokeWidth = 3.dp,
+                    )
                 }
             } else {
-                state.groups.forEach { group ->
-                    item(key = "group_header_${group.dateIso}") {
-                        CalendarDayHeader(group = group)
-                    }
+                if (isWideLayout) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    ) {
+                        // Calendar Month Grid (Stremio Style)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        ) {
+                            CalendarMonthGrid(
+                                month = state.currentMonth,
+                                todayIso = todayIso,
+                                selectedDateIso = state.selectedDateIso,
+                                episodesByDate = state.episodesByDate,
+                                onDateSelected = { CalendarRepository.selectDate(it) },
+                                onEpisodeClick = onPosterClick,
+                            )
+                        }
 
-                    items(
-                        items = group.episodes,
-                        key = { "${it.showId}_${it.episodeId}_${it.releaseDateIso}" },
-                    ) { episode ->
-                        CalendarEpisodeRow(
-                            episode = episode,
-                            onClick = { onPosterClick(episode.showType, episode.showId) },
+                        // Right Sidebar: Schedule / Day Agenda
+                        Surface(
+                            modifier = Modifier
+                                .width(330.dp)
+                                .fillMaxHeight(),
+                            shape = RoundedCornerShape(18.dp),
+                            color = Color(0xFF131317).copy(alpha = 0.75f),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                        ) {
+                            CalendarAgendaSidebar(
+                                month = state.currentMonth,
+                                todayIso = todayIso,
+                                selectedDateIso = state.selectedDateIso,
+                                episodesByDate = state.episodesByDate,
+                                allEpisodes = state.allEpisodes,
+                                onEpisodeClick = onPosterClick,
+                            )
+                        }
+                    }
+                } else {
+                    // Mobile / narrow layout: scrollable grid with agenda underneath
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        CalendarMonthGrid(
+                            month = state.currentMonth,
+                            todayIso = todayIso,
+                            selectedDateIso = state.selectedDateIso,
+                            episodesByDate = state.episodesByDate,
+                            onDateSelected = { CalendarRepository.selectDate(it) },
+                            onEpisodeClick = onPosterClick,
+                        )
+
+                        CalendarAgendaSidebar(
+                            month = state.currentMonth,
+                            todayIso = todayIso,
+                            selectedDateIso = state.selectedDateIso,
+                            episodesByDate = state.episodesByDate,
+                            allEpisodes = state.allEpisodes,
+                            onEpisodeClick = onPosterClick,
+                            modifier = Modifier.height(400.dp),
                         )
                     }
                 }
@@ -148,181 +215,512 @@ fun CalendarScreen(
 }
 
 @Composable
-private fun CalendarHeader(
-    state: CalendarUiState,
-    onFilterChange: (CalendarFilter) -> Unit,
+private fun CalendarMonthNavigationHeader(
+    currentMonth: CalendarMonth,
+    isRefreshing: Boolean,
+    onMonthSelect: (CalendarMonth) -> Unit,
+    onTodayClick: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val rotation by animateFloatAsState(
-        targetValue = if (state.isLoading) 360f else 0f,
-        animationSpec = tween(durationMillis = 800),
-        label = "refresh_spin",
+    val prevMonth = CalendarDateUtils.previousMonth(currentMonth)
+    val nextMonth = CalendarDateUtils.nextMonth(currentMonth)
+
+    val spin by animateFloatAsState(
+        targetValue = if (isRefreshing) 360f else 0f,
+        animationSpec = tween(700),
+        label = "spin_refresh",
     )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Left: Jump to Today button
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color.White.copy(alpha = 0.06f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.clickable(onClick = onTodayClick),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CalendarToday,
+                    contentDescription = null,
+                    tint = tokens.colors.accent,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = "Oggi",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = tokens.colors.textPrimary,
+                    ),
+                )
+            }
+        }
+
+        // Center: Month Tabs (Previous - Current - Next) Stremio Style!
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            IconButton(
+                onClick = { onMonthSelect(prevMonth) },
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                    contentDescription = "Mese precedente",
+                    tint = tokens.colors.textSecondary,
+                )
+            }
+
+            // Previous Month name (subtle, clickable)
+            Text(
+                text = CalendarDateUtils.getMonthName(prevMonth.month),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Medium,
+                    color = tokens.colors.textMuted,
+                ),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onMonthSelect(prevMonth) }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+
+            // Current Month name (bold, white, prominent)
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = "${CalendarDateUtils.getMonthName(currentMonth.month)} ${currentMonth.year}",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    ),
+                )
+            }
+
+            // Next Month name (subtle, clickable)
+            Text(
+                text = CalendarDateUtils.getMonthName(nextMonth.month),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Medium,
+                    color = tokens.colors.textMuted,
+                ),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onMonthSelect(nextMonth) }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+
+            IconButton(
+                onClick = { onMonthSelect(nextMonth) },
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = "Mese successivo",
+                    tint = tokens.colors.textSecondary,
+                )
+            }
+        }
+
+        // Right: Refresh button
+        IconButton(
+            onClick = onRefresh,
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.06f)),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Refresh,
+                contentDescription = stringResource(Res.string.calendar_refresh),
+                tint = tokens.colors.textPrimary,
+                modifier = Modifier.rotate(spin),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CalendarMonthGrid(
+    month: CalendarMonth,
+    todayIso: String,
+    selectedDateIso: String?,
+    episodesByDate: Map<String, List<CalendarEpisodeItem>>,
+    onDateSelected: (String) -> Unit,
+    onEpisodeClick: (type: String, id: String) -> Unit,
+) {
+    val tokens = MaterialTheme.nuvio
+    val daysInMonth = CalendarDateUtils.daysInMonth(month.year, month.month)
+    val firstDayOfWeek = CalendarDateUtils.dayOfWeek(month.year, month.month, 1)
+
+    // Weekday labels
+    val weekdays = listOf("Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica")
+
+    val totalCells = ((firstDayOfWeek + daysInMonth + 6) / 7) * 7
+    val rows = totalCells / 7
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .fillMaxSize()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF101014).copy(alpha = 0.60f))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(18.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // Weekdays Header Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            weekdays.forEach { dayName ->
+                Text(
+                    text = dayName,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = tokens.colors.textMuted,
+                    ),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        // Month Grid Rows
+        for (r in 0 until rows) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                for (c in 0 until 7) {
+                    val cellIndex = r * 7 + c
+                    val dayNum = cellIndex - firstDayOfWeek + 1
+
+                    if (dayNum in 1..daysInMonth) {
+                        val dateIso = "${month.year}-${month.month.toString().padStart(2, '0')}-${dayNum.toString().padStart(2, '0')}"
+                        val isToday = dateIso == todayIso
+                        val isSelected = dateIso == selectedDateIso
+                        val episodes = episodesByDate[dateIso].orEmpty()
+
+                        CalendarDayGridCell(
+                            dayNumber = dayNum,
+                            dateIso = dateIso,
+                            isToday = isToday,
+                            isSelected = isSelected,
+                            episodes = episodes,
+                            onClick = { onDateSelected(dateIso) },
+                            onEpisodeClick = onEpisodeClick,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    } else {
+                        // Empty cell outside current month
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color.White.copy(alpha = 0.015f)),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarDayGridCell(
+    dayNumber: Int,
+    dateIso: String,
+    isToday: Boolean,
+    isSelected: Boolean,
+    episodes: List<CalendarEpisodeItem>,
+    onClick: () -> Unit,
+    onEpisodeClick: (type: String, id: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = MaterialTheme.nuvio
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
+    val borderColor = when {
+        isSelected -> tokens.colors.accent
+        isHovered -> Color.White.copy(alpha = 0.22f)
+        isToday -> tokens.colors.accent.copy(alpha = 0.40f)
+        else -> Color.White.copy(alpha = 0.05f)
+    }
+
+    val backgroundColor = when {
+        isSelected -> tokens.colors.accent.copy(alpha = 0.12f)
+        isHovered -> Color.White.copy(alpha = 0.07f)
+        else -> Color(0xFF16161B).copy(alpha = 0.55f)
+    }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = backgroundColor,
+        border = BorderStroke(1.dp, borderColor),
+        modifier = modifier
+            .hoverable(interactionSource)
+            .clickable(onClick = onClick),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(6.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            // Day number header (circular purple badge if today, like Stremio!)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (isToday) {
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(tokens.colors.accent),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = dayNumber.toString(),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                            ),
+                        )
+                    }
+                } else {
+                    Text(
+                        text = dayNumber.toString(),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) tokens.colors.textPrimary else tokens.colors.textSecondary,
+                        ),
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                    )
+                }
+
+                if (episodes.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.White.copy(alpha = 0.10f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    ) {
+                        Text(
+                            text = "${episodes.size}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = tokens.colors.textPrimary,
+                            ),
+                        )
+                    }
+                }
+            }
+
+            // Episode Mini Posters Row (Stremio style!)
+            if (episodes.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    val displayEpisodes = episodes.take(3)
+                    displayEpisodes.forEach { ep ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                                .clickable { onEpisodeClick(ep.showType, ep.showId) },
+                        ) {
+                            val posterUrl = ep.showPoster ?: ep.thumbnail
+                            if (!posterUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = posterUrl,
+                                    contentDescription = ep.showTitle,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            }
+                        }
+                    }
+
+                    if (episodes.size > 3) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "+${episodes.size - 3}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                ),
+                            )
+                        }
+                    }
+                }
+            } else {
+                Spacer(modifier = Modifier.height(1.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarAgendaSidebar(
+    month: CalendarMonth,
+    todayIso: String,
+    selectedDateIso: String?,
+    episodesByDate: Map<String, List<CalendarEpisodeItem>>,
+    allEpisodes: List<CalendarEpisodeItem>,
+    onEpisodeClick: (type: String, id: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = MaterialTheme.nuvio
+
+    // If a day is selected, show that day's episodes; otherwise show all upcoming episodes for the month
+    val displayGroups: List<Pair<String, List<CalendarEpisodeItem>>> = remember(selectedDateIso, month, episodesByDate, allEpisodes) {
+        if (!selectedDateIso.isNullOrBlank()) {
+            val items = episodesByDate[selectedDateIso].orEmpty()
+            if (items.isNotEmpty()) listOf(selectedDateIso to items) else emptyList()
+        } else {
+            // Filter episodes matching the current displayed month
+            val monthPrefix = "${month.year}-${month.month.toString().padStart(2, '0')}"
+            episodesByDate
+                .filterKeys { it.startsWith(monthPrefix) }
+                .toList()
+                .sortedBy { it.first }
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        // Sidebar Title
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = if (!selectedDateIso.isNullOrBlank()) {
+                    formatReleaseDateForDisplay(selectedDateIso)
+                } else {
+                    "Uscite del Mese"
+                },
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.colors.textPrimary,
+                ),
+            )
+
+            if (!selectedDateIso.isNullOrBlank()) {
                 Text(
-                    text = stringResource(Res.string.calendar_title),
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = tokens.colors.textPrimary,
+                    text = "Mostra tutti",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = tokens.colors.accent,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { CalendarRepository.selectDate(null) }
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                )
+            }
+        }
+
+        if (displayGroups.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (!selectedDateIso.isNullOrBlank()) {
+                        "Nessun episodio in uscita in questa data"
+                    } else {
+                        "Nessuna uscita programmata per questo mese"
+                    },
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = tokens.colors.textMuted,
+                        textAlign = TextAlign.Center,
                     ),
                 )
-                if (state.trackedShowsCount > 0) {
-                    Text(
-                        text = "${state.totalEpisodesCount} uscite da ${state.trackedShowsCount} serie seguite",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = tokens.colors.textSecondary,
-                        ),
-                    )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 16.dp),
+            ) {
+                displayGroups.forEach { (dateIso, episodes) ->
+                    item(key = "agenda_header_$dateIso") {
+                        val isToday = dateIso == todayIso
+                        val formattedDate = formatReleaseDateForDisplay(dateIso)
+                        val headerLabel = if (isToday) "Oggi • $formattedDate" else formattedDate
+
+                        Text(
+                            text = headerLabel,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = if (isToday) tokens.colors.accent else tokens.colors.textSecondary,
+                            ),
+                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                        )
+                    }
+
+                    items(
+                        items = episodes,
+                        key = { "${it.showId}_${it.episodeId}_${it.releaseDateIso}" },
+                    ) { episode ->
+                        AgendaEpisodeItemRow(
+                            episode = episode,
+                            onClick = { onEpisodeClick(episode.showType, episode.showId) },
+                        )
+                    }
                 }
             }
-
-            IconButton(
-                onClick = onRefresh,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.06f)),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Refresh,
-                    contentDescription = stringResource(Res.string.calendar_refresh),
-                    tint = tokens.colors.textPrimary,
-                    modifier = Modifier.rotate(rotation),
-                )
-            }
-        }
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CalendarFilterChip(
-                label = stringResource(Res.string.calendar_filter_all),
-                selected = state.selectedFilter == CalendarFilter.ALL,
-                onClick = { onFilterChange(CalendarFilter.ALL) },
-            )
-            CalendarFilterChip(
-                label = stringResource(Res.string.calendar_filter_7_days),
-                selected = state.selectedFilter == CalendarFilter.DAYS_7,
-                onClick = { onFilterChange(CalendarFilter.DAYS_7) },
-            )
-            CalendarFilterChip(
-                label = stringResource(Res.string.calendar_filter_30_days),
-                selected = state.selectedFilter == CalendarFilter.DAYS_30,
-                onClick = { onFilterChange(CalendarFilter.DAYS_30) },
-            )
         }
     }
 }
 
 @Composable
-private fun CalendarFilterChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val tokens = MaterialTheme.nuvio
-    val backgroundColor = if (selected) tokens.colors.accent else Color.White.copy(alpha = 0.08f)
-    val textColor = if (selected) Color.White else tokens.colors.textSecondary
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(backgroundColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium.copy(
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                color = textColor,
-            ),
-        )
-    }
-}
-
-@Composable
-private fun CalendarDayHeader(group: CalendarDayGroup) {
-    val tokens = MaterialTheme.nuvio
-    val isHighlighted = group.isToday || group.isTomorrow
-    val dotColor = when {
-        group.isToday -> tokens.colors.accent
-        group.isTomorrow -> Color(0xFFF59E0B)
-        else -> tokens.colors.textMuted
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 16.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(dotColor),
-        )
-
-        Text(
-            text = group.label,
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.SemiBold,
-                color = if (isHighlighted) tokens.colors.textPrimary else tokens.colors.textSecondary,
-            ),
-        )
-
-        if (group.isToday) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(tokens.colors.accent.copy(alpha = 0.22f))
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = "OGGI",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = tokens.colors.accent,
-                    ),
-                )
-            }
-        } else if (group.isTomorrow) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFFF59E0B).copy(alpha = 0.22f))
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = "DOMANI",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFF59E0B),
-                    ),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CalendarEpisodeRow(
+private fun AgendaEpisodeItemRow(
     episode: CalendarEpisodeItem,
     onClick: () -> Unit,
 ) {
@@ -330,22 +728,12 @@ private fun CalendarEpisodeRow(
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
-    val surfaceColor = if (isHovered) {
-        Color.White.copy(alpha = 0.08f)
-    } else {
-        Color(0xFF141416).copy(alpha = 0.60f)
-    }
-
-    val borderColor = if (isHovered) {
-        tokens.colors.accent.copy(alpha = 0.5f)
-    } else {
-        Color.White.copy(alpha = 0.06f)
-    }
+    val surfaceColor = if (isHovered) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.03f)
 
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
         color = surfaceColor,
-        border = BorderStroke(1.dp, borderColor),
+        border = BorderStroke(1.dp, if (isHovered) tokens.colors.accent.copy(alpha = 0.35f) else Color.Transparent),
         modifier = Modifier
             .fillMaxWidth()
             .hoverable(interactionSource)
@@ -354,174 +742,65 @@ private fun CalendarEpisodeRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // Episode Thumbnail / Poster
+            // Thumbnail
             Box(
                 modifier = Modifier
-                    .size(width = 110.dp, height = 66.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.Black.copy(alpha = 0.35f)),
-                contentAlignment = Alignment.Center,
+                    .size(width = 46.dp, height = 64.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.3f)),
             ) {
-                val imageUrl = episode.thumbnail ?: episode.showPoster
-                if (!imageUrl.isNullOrBlank()) {
+                val img = episode.showPoster ?: episode.thumbnail
+                if (!img.isNullOrBlank()) {
                     AsyncImage(
-                        model = imageUrl,
+                        model = img,
                         contentDescription = episode.showTitle,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                     )
-                } else {
-                    Icon(
-                        imageVector = Icons.Rounded.DateRange,
-                        contentDescription = null,
-                        tint = tokens.colors.textMuted,
-                        modifier = Modifier.size(24.dp),
-                    )
                 }
             }
 
-            // Episode Info
+            // Info
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = episode.showTitle,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = tokens.colors.textPrimary,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                Text(
+                    text = episode.showTitle,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = tokens.colors.textPrimary,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
 
-                    val code = localizedSeasonEpisodeCode(episode.seasonNumber, episode.episodeNumber)
-                    if (!code.isNullOrBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(tokens.colors.accent.copy(alpha = 0.16f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = code,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = tokens.colors.accent,
-                                ),
-                            )
-                        }
-                    }
+                val code = localizedSeasonEpisodeCode(episode.seasonNumber, episode.episodeNumber)
+                if (!code.isNullOrBlank()) {
+                    Text(
+                        text = code,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = tokens.colors.accent,
+                        ),
+                    )
                 }
 
                 if (!episode.episodeTitle.isNullOrBlank()) {
                     Text(
                         text = episode.episodeTitle,
-                        style = MaterialTheme.typography.bodyMedium.copy(
+                        style = MaterialTheme.typography.bodySmall.copy(
                             color = tokens.colors.textSecondary,
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-
-                if (!episode.overview.isNullOrBlank()) {
-                    Text(
-                        text = episode.overview,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = tokens.colors.textMuted,
-                        ),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            // Relative days indicator
-            if (episode.daysUntilRelease != null) {
-                val badgeText = when (episode.daysUntilRelease) {
-                    0 -> "OGGI"
-                    1 -> "DOMANI"
-                    in 2..Int.MAX_VALUE -> "+${episode.daysUntilRelease} gg"
-                    else -> "${episode.daysUntilRelease} gg"
-                }
-
-                val badgeBg = when (episode.daysUntilRelease) {
-                    0 -> tokens.colors.accent
-                    1 -> Color(0xFFF59E0B)
-                    else -> Color.White.copy(alpha = 0.08f)
-                }
-
-                val badgeFg = when (episode.daysUntilRelease) {
-                    0, 1 -> Color.White
-                    else -> tokens.colors.textSecondary
-                }
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(badgeBg)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = badgeText,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = badgeFg,
-                        ),
-                    )
-                }
             }
         }
-    }
-}
-
-@Composable
-private fun CalendarEmptyState() {
-    val tokens = MaterialTheme.nuvio
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 80.dp, horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.06f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.DateRange,
-                contentDescription = null,
-                modifier = Modifier.size(36.dp),
-                tint = tokens.colors.accent,
-            )
-        }
-
-        Text(
-            text = stringResource(Res.string.calendar_empty_title),
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Bold,
-                color = tokens.colors.textPrimary,
-            ),
-        )
-
-        Text(
-            text = stringResource(Res.string.calendar_empty_subtitle),
-            style = MaterialTheme.typography.bodyMedium.copy(
-                color = tokens.colors.textMuted,
-            ),
-        )
     }
 }
