@@ -157,7 +157,7 @@ fun CalendarScreen(
                         // Right Sidebar: Schedule / Day Agenda
                         Surface(
                             modifier = Modifier
-                                .width(330.dp)
+                                .width(360.dp)
                                 .fillMaxHeight(),
                             shape = RoundedCornerShape(18.dp),
                             color = Color(0xFF131317).copy(alpha = 0.75f),
@@ -362,74 +362,86 @@ private fun CalendarMonthGrid(
     val weekdays = listOf("Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica")
 
     val totalCells = ((firstDayOfWeek + daysInMonth + 6) / 7) * 7
-    val rows = totalCells / 7
+    val rows = (totalCells / 7).coerceAtLeast(1)
+    val minRowHeight = 135.dp
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(18.dp))
             .background(Color(0xFF101014).copy(alpha = 0.60f))
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(18.dp))
             .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // Weekdays Header Row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            weekdays.forEach { dayName ->
-                Text(
-                    text = dayName,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        color = tokens.colors.textMuted,
-                    ),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
+        val availableHeight = maxHeight - 48.dp
+        val dynamicRowHeight = availableHeight / rows
+        val useScroll = dynamicRowHeight < minRowHeight
+        val effectiveRowHeight = if (useScroll) minRowHeight else dynamicRowHeight
 
-        // Month Grid Rows
-        for (r in 0 until rows) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (useScroll) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // Weekdays Header Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                for (c in 0 until 7) {
-                    val cellIndex = r * 7 + c
-                    val dayNum = cellIndex - firstDayOfWeek + 1
+                weekdays.forEach { dayName ->
+                    Text(
+                        text = dayName,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = tokens.colors.textMuted,
+                        ),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
 
-                    if (dayNum in 1..daysInMonth) {
-                        val dateIso = "${month.year}-${month.month.toString().padStart(2, '0')}-${dayNum.toString().padStart(2, '0')}"
-                        val isToday = dateIso == todayIso
-                        val isSelected = dateIso == selectedDateIso
-                        val episodes = episodesByDate[dateIso].orEmpty()
+            // Month Grid Rows
+            for (r in 0 until rows) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(effectiveRowHeight),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    for (c in 0 until 7) {
+                        val cellIndex = r * 7 + c
+                        val dayNum = cellIndex - firstDayOfWeek + 1
 
-                        CalendarDayGridCell(
-                            dayNumber = dayNum,
-                            dateIso = dateIso,
-                            isToday = isToday,
-                            isSelected = isSelected,
-                            episodes = episodes,
-                            onClick = { onDateSelected(dateIso) },
-                            onEpisodeClick = onEpisodeClick,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                        )
-                    } else {
-                        // Empty cell outside current month
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color.White.copy(alpha = 0.015f)),
-                        )
+                        if (dayNum in 1..daysInMonth) {
+                            val dateIso = "${month.year}-${month.month.toString().padStart(2, '0')}-${dayNum.toString().padStart(2, '0')}"
+                            val isToday = dateIso == todayIso
+                            val isSelected = dateIso == selectedDateIso
+                            val episodes = episodesByDate[dateIso].orEmpty()
+
+                            CalendarDayGridCell(
+                                dayNumber = dayNum,
+                                dateIso = dateIso,
+                                isToday = isToday,
+                                isSelected = isSelected,
+                                episodes = episodes,
+                                onClick = { onDateSelected(dateIso) },
+                                onEpisodeClick = onEpisodeClick,
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                        } else {
+                            // Empty cell outside current month
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color.White.copy(alpha = 0.015f)),
+                            )
+                        }
                     }
                 }
             }
@@ -531,7 +543,7 @@ private fun CalendarDayGridCell(
                 }
             }
 
-            // Episode Mini Posters Row - STRICTLY VERTICAL (Stremio style!)
+            // Episode Mini Posters Row - STRICTLY VERTICAL (Stremio style, enlarged +75%)
             if (episodes.isNotEmpty()) {
                 BoxWithConstraints(
                     modifier = Modifier
@@ -539,27 +551,27 @@ private fun CalendarDayGridCell(
                         .padding(top = 4.dp),
                 ) {
                     val availableWidth = maxWidth
-                    val posterWidth = 34.dp
-                    val posterHeight = 51.dp // 2:3 ratio
-                    val maxPosters = ((availableWidth.value) / 38).toInt().coerceIn(1, 4)
+                    val posterWidth = 60.dp
+                    val posterHeight = 90.dp // 2:3 ratio (+75% increase)
+                    val maxPosters = ((availableWidth.value) / 66).toInt().coerceIn(1, 4)
                     val showCount = if (episodes.size > maxPosters) (maxPosters - 1).coerceAtLeast(1) else episodes.size
                     val displayEpisodes = episodes.take(showCount)
                     val remaining = episodes.size - showCount
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.Start),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.Start),
                         verticalAlignment = Alignment.Bottom,
                     ) {
                         displayEpisodes.forEach { ep ->
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
+                                shape = RoundedCornerShape(6.dp),
                                 color = Color.Black.copy(alpha = 0.5f),
                                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
                                 modifier = Modifier
                                     .width(posterWidth)
                                     .height(posterHeight)
-                                    .clip(RoundedCornerShape(4.dp))
+                                    .clip(RoundedCornerShape(6.dp))
                                     .clickable { onEpisodeClick(ep.showType, ep.showId) },
                             ) {
                                 val posterUrl = ep.showPoster ?: ep.thumbnail
@@ -577,16 +589,16 @@ private fun CalendarDayGridCell(
                         if (remaining > 0) {
                             Box(
                                 modifier = Modifier
-                                    .width(22.dp)
+                                    .width(26.dp)
                                     .height(posterHeight)
-                                    .clip(RoundedCornerShape(4.dp))
+                                    .clip(RoundedCornerShape(6.dp))
                                     .background(Color.White.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
                                     text = "+$remaining",
                                     style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White,
                                     ),
@@ -749,15 +761,15 @@ private fun AgendaEpisodeItemRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // STRICTLY VERTICAL POSTER (2:3 aspect ratio)
+            // STRICTLY VERTICAL POSTER (2:3 aspect ratio, enlarged +75%)
             Surface(
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = Color.Black.copy(alpha = 0.4f),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
                 modifier = Modifier
-                    .width(52.dp)
-                    .height(78.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .width(90.dp)
+                    .height(135.dp)
+                    .clip(RoundedCornerShape(10.dp)),
             ) {
                 val img = episode.showPoster ?: episode.thumbnail
                 if (!img.isNullOrBlank()) {
